@@ -6,6 +6,7 @@ import 'package:injectable_generator/models/dependency_config.dart';
 import 'package:injectable_generator/models/importable_type.dart';
 import 'package:injectable_generator/models/injected_dependency.dart';
 import 'package:injectable_generator/resolvers/importable_type_resolver.dart';
+import 'package:injectable_generator/utils.dart';
 import 'package:meta/meta.dart';
 
 class DependencyList with IterableMixin<DependencyConfig> {
@@ -138,11 +139,46 @@ void _sortByDependents(
     }
   }
   if (unSorted.isNotEmpty) {
-    var difference =
+    var diff =
         unSorted.where((element) => !sorted.contains(element)).toList();
 
-    _sortByDependents(difference, sorted);
+    // _sortByDependents(difference, sorted);
+
+    // final diff = unSorted.difference(sorted);
+    if (unSorted.length == diff.length) {
+      final loop = _findLoop(unSorted.toSet(), {}).toList();
+      loop.add(loop.first);
+      final loopMessage = 'loop: ${loop.map((e) => e.type.name).join(' -> ')}';
+      throwError('Circular dependency detected!\n$loopMessage');
+    }
+    _sortByDependents(diff, sorted);
   }
+}
+
+Set<DependencyConfig> _findLoop(
+    Set<DependencyConfig> unsorted,
+    Set<DependencyConfig> loop,
+    ) {
+  if (loop.isEmpty) {
+    loop.add(unsorted.first);
+  }
+  final dependency = loop.last;
+  for (final item in dependency.dependencies) {
+    final next = lookupDependencyWithNoEnvOrHasAny(item, unsorted.toList(), dependency.environments);
+    if (next != null) {
+      if (loop.contains(next)) {
+        return loop;
+      }
+      loop.add(next);
+      return _findLoop(unsorted, loop);
+    }
+  }
+  throwError(
+    "We shouldn't get there because previous sorting guarantees that for each "
+        "dependecny in unsorted list there's at least one unresolved dependency hence it lies in "
+        "unsorted according to _sortByDependents invariants. If you see this, report a bug.",
+  );
+  return {};
 }
 
 DependencyConfig? lookupDependency(
